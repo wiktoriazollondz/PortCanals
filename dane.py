@@ -32,13 +32,13 @@ for file in meteo_files:
         "Opad [mm]": "sum",
         "Temperatura [C]": ["mean", "min", "max"],
         "Wilgotność [%]": "mean",
-        "Ciśnienie [hPa]": "mean"
+        "Ciśnienie [hPa]": ["mean", "min", "max"],
     })
     df_dobowe.columns = [
         'Opad_suma',
         'Temp_średnia', 'Temp_min', 'Temp_max',
         'Wilgotność_średnia',
-        'Ciśnienie_średnia'
+        'Ciśnienie_średnia', "Ciśnienie_min", "Ciśnienie_max",
     ]
     all_meteo.append(df_dobowe)
 
@@ -58,9 +58,27 @@ medians = full_meteo.groupby(['month', 'day']).transform('median')
 full_meteo = full_meteo.fillna(medians)
 full_meteo = full_meteo.drop(columns=['month', 'day'])  # usunięcie kolumn pomocniczych
 
-print("Ilość dni po poprawkach w danych meteorologicznych:", len(full_meteo))
-print(full_meteo.head())
-print(full_meteo.tail())
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# dodatkowe wartości ciśnienia
+full_meteo['Ciśnienie_ampl'] = full_meteo['Ciśnienie_max'] - full_meteo['Ciśnienie_min']
+full_meteo['Ciśnienie_delta_1d'] = full_meteo['Ciśnienie_średnia'].diff()
+full_meteo['Ciśnienie_delta_2d'] = full_meteo['Ciśnienie_średnia'] - full_meteo['Ciśnienie_średnia'].shift(2)
+full_meteo['Ciśnienie_delta_3d'] = full_meteo['Ciśnienie_średnia'] - full_meteo['Ciśnienie_średnia'].shift(3)
+full_meteo['Ciśnienie_trend_3d'] = full_meteo['Ciśnienie_średnia'].rolling(3, min_periods=1).mean()
+full_meteo['Ciśnienie_trend_7d'] = full_meteo['Ciśnienie_średnia'].rolling(7, min_periods=1).mean()
+
+# przybliżone cechy wiatru na podstawie ciśnienia
+full_meteo['Wiatr_siła_proxy'] = full_meteo['Ciśnienie_delta_1d'].abs()
+full_meteo['Wiatr_kierunek_proxy'] = np.sign(full_meteo['Ciśnienie_delta_1d'])
+
+# usunięcie NaN
+full_meteo.iloc[0, full_meteo.columns.get_loc('Ciśnienie_delta_1d')] = 0
+full_meteo.iloc[0, full_meteo.columns.get_loc('Ciśnienie_delta_2d')] = 0
+full_meteo.iloc[0, full_meteo.columns.get_loc('Ciśnienie_delta_3d')] = 0
+full_meteo.iloc[0, full_meteo.columns.get_loc('Wiatr_siła_proxy')] = 0
+full_meteo.iloc[0, full_meteo.columns.get_loc('Wiatr_kierunek_proxy')] = 0
+full_meteo.loc[full_meteo.index[1], ['Ciśnienie_delta_2d', 'Ciśnienie_delta_3d']] = 0
+full_meteo.loc[full_meteo.index[2], ['Ciśnienie_delta_3d']] = 0
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 #POZIOM WODY
@@ -107,6 +125,16 @@ medians = full_water_level.groupby(['month', 'day']).transform('median')
 full_water_level = full_water_level.fillna(medians)
 full_water_level = full_water_level.drop(columns=['month', 'day'])  # usunięcie kolumn pomocniczych
 
-print("Ilość dni po poprawkach w danych poziomu wody:", len(full_water_level))
-print(full_water_level.head())
-print(full_water_level.tail())
+# print("Ilość dni po poprawkach w danych poziomu wody:", len(full_water_level))
+# print(full_water_level.head())
+# print(full_water_level.tail())
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# połączenie w jeden database
+final = full_meteo.join(full_water_level, how='inner')
+
+# wyświetlanie wszystkich kolumn
+# pd.set_option('display.max_columns', None)
+# pd.set_option('display.width', None)~
+
+print(final)
